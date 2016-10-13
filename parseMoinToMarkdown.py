@@ -1028,56 +1028,33 @@ class MailToMacro(List):
         parse('MailTo( w4mcourse2015.organisation@sb-roscoff.fr, W4M Course Organisers)', cls)
         parse("MailTo(mimodd@googlegroups.com, MiModD Google Group)", cls)
         
-class FullSearchCachedMacro(List):
-    """
-    Macro that generates a list of pages 
-      <<FullSearchCached(stringtosearchfor)>>
-    """
-    grammar = contiguous(
-        "FullSearchCached(",
-        attr("searchString", re.compile(r".+(?=\))")),
-        ")")
-
-    def compose(self, parser, attr_of):
-        """
-        Override compose method to generate Markdown.
-        """
-        return("PLACEHOLDER_FULL_SEARCH_CACHE(" + self.searchString + ")")
-
-
-    @classmethod
-    def test(cls):
-        """
-        Test different instances of what this should and should not recognize
-        """
-        parse("FullSearchCached(stringtosearchfor)", cls)
-
         
-
-class NewPageMacro(List):
+class OtherMacro(List):
     """
-    Macro that generates a list of pages 
-      <<NewPage()>>
-      <<NewPage(NewsTemplate, "Create a News Item page", News)>>
+    Handles the general case where we don't do anything intelligent with
+    the macro other than regurgitate it.
     """
     grammar = contiguous(
-        "NewPage(",
+        attr("macroType", 
+             re.compile(r"NewPage|FullSearchCached|RSSReader|Action|ShowTweets|DictColumns|DateTime|Date|Anchor")),
+        "(",
         optional(
             attr("theRest", re.compile(r".+(?=\))"))),
         ")")
-                         
 
     def compose(self, parser, attr_of):
         """
         Override compose method to generate Markdown.
         """
-        out = "PLACEHOLDER_NEW_PAGE("
+        macroUnderscore = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', self.macroType)
+        macroUpperUnderscore = re.sub('([a-z0-9])([A-Z])', r'\1_\2', 
+                                      macroUnderscore).upper()
+        out = "PLACEHOLDER_" + macroUpperUnderscore + "("
         if hasattr(self, "theRest"):
             out += self.theRest
         out += ")"
         return(out)
-        
-                
+
     @classmethod
     def test(cls):
         """
@@ -1085,71 +1062,14 @@ class NewPageMacro(List):
         """
         parse("NewPage()", cls)
         parse('NewPage(NewsTemplate, "Create a News Item page", News)', cls)
-
-
-
-class RSSReaderMacro(List):
-    """
-    Macro that generates a list of pages 
-      <<RSSReader("http://feed43.com/galaxynotesheadlines.xml", includeStyle=False)>>
-    """
-    grammar = contiguous(
-        "RSSReader(",
-        attr("theRest", re.compile(r".+(?=\))")),
-        ")")
-                         
-
-    def compose(self, parser, attr_of):
-        """
-        Override compose method to generate Markdown.
-        """
-        out = "PLACEHOLDER_RSSREADER("
-        if hasattr(self, "theRest"):
-            out += self.theRest
-        out += ")"
-        return(out)
-        
-                
-    @classmethod
-    def test(cls):
-        """
-        Test different instances of what this should and should not recognize
-        """
-        parse('RSSReader("http://feed43.com/galaxynotesheadlines.xml", includeStyle=False)', cls)
-
-        
-
-        
-class ActionMacro(List):
-    """
-    Action Macros look like
-      <<Action(AttachFile, Attach a file to this page.)>>
-    """
-    grammar = contiguous(
-        "Action(",
-        maybe_some(whitespace),
-        attr("actionType", re.compile(r".+(?=,)")),
-        maybe_some(whitespace),
-        ",",
-        maybe_some(whitespace),
-        attr("actionText", re.compile(r".+(?=\))")),
-        ")")
-            
-
-    def compose(self, parser, attr_of):
-        """
-        Can be generated as a link in Markdown
-        """
-        out = "PLACEHOLDER_ACTION(" + self.actionType + "," + self.actionText + ")"
-        return(out)
-
-        
-    @classmethod
-    def test(cls):
-        """
-        Test different instances of what this should and should not recognize
-        """
+        parse("FullSearchCached(stringtosearchfor)", cls)
+        parse('RSSReader("http://feed43.com/galaxynotesheadlines.xml", includeStyle=False)', cls)        
         parse("Action(AttachFile, Attach a file to this page.)", cls)
+        parse('ShowTweets(user="galaxyproject", maxTweets=20)', cls)
+        parse('DictColumns(pagename=VA, names="Appliance, Technology, Domains, Description, Owners, Date Created/Updated", sort="Date Created/Updated", title="Hide", hide="Hide")', cls)
+        parse('DateTime(2011-08-30T22:27:39Z)")', cls)
+        parse('Date(2012-01-27T01:02:28Z)', cls)
+        parse('Anchor(Stampede)', cls)
 
 
 class AttachListMacro(List):
@@ -1172,157 +1092,7 @@ class AttachListMacro(List):
         """
         parse("AttachList", cls)
 
-class ShowTweetsMacro(List):
-    """
-    ShowTweets Macros look like
-      <<ShowTweets(user="galaxyproject", maxTweets=20)>>
-      
-    """
-    grammar = contiguous(
-        "ShowTweets(",
-        maybe_some(whitespace),
-        attr("username", re.compile(r".+(?=,)")),
-        maybe_some(whitespace),
-        ",",
-        maybe_some(whitespace),
-        attr("maxTweets", re.compile(r".+(?=\))")),
-        ")")
-            
 
-    def compose(self, parser, attr_of):
-        """
-        Can be generated as a link in Markdown
-        """
-        out = "PLACEHOLDER_SHOW_TWEETS(" + self.username + "," + self.maxTweets + ")"
-        return(out)
-
-        
-    @classmethod
-    def test(cls):
-        """
-        Test different instances of what this should and should not recognize
-        """
-        parse('ShowTweets(user="galaxyproject", maxTweets=20)', cls)
-
-
-class DictColumnsMacro(List):
-    """
-    DictColumns Macros look like
-      <<DictColumns(pagename=VA, names="Appliance, Technology, Domains, Description, Owners, Date Created/Updated", sort="Date Created/Updated", title="Hide", hide="Hide")>>
-      
-    """
-    grammar = contiguous(
-        "DictColumns(",
-        attr("theRest", re.compile(r".+(?=\))")),
-        ")")
-                         
-
-    def compose(self, parser, attr_of):
-        """
-        Override compose method to generate Markdown.
-        """
-        out = "PLACEHOLDER_DICT_COLUMNS("
-        if hasattr(self, "theRest"):
-            out += self.theRest
-        out += ")"
-        return(out)
-        
-    @classmethod
-    def test(cls):
-        """
-        Test different instances of what this should and should not recognize
-        """
-        parse('DictColumns(pagename=VA, names="Appliance, Technology, Domains, Description, Owners, Date Created/Updated", sort="Date Created/Updated", title="Hide", hide="Hide")', cls)
-
-
-class DateTimeMacro(List):
-    """
-    DateTime Macros look like
-      <<DateTime(2011-08-30T22:27:39Z)>>
-      
-    """
-    grammar = contiguous(
-        "DateTime(",
-        attr("theRest", re.compile(r".+(?=\))")),
-        ")")
-                         
-
-    def compose(self, parser, attr_of):
-        """
-        Override compose method to generate Markdown.
-        """
-        out = "PLACEHOLDER_DATE_TIME("
-        if hasattr(self, "theRest"):
-            out += self.theRest
-        out += ")"
-        return(out)
-        
-    @classmethod
-    def test(cls):
-        """
-        Test different instances of what this should and should not recognize
-        """
-        parse('DateTime(2011-08-30T22:27:39Z)")', cls)
-
-
-
-class DateMacro(List):
-    """
-    Date Macros look like
-      <<Date(2012-01-27T01:02:28Z)>>
-      
-    """
-    grammar = contiguous(
-        "Date(",
-        attr("theRest", re.compile(r".+(?=\))")),
-        ")")
-                         
-
-    def compose(self, parser, attr_of):
-        """
-        Override compose method to generate Markdown.
-        """
-        out = "PLACEHOLDER_DATE("
-        if hasattr(self, "theRest"):
-            out += self.theRest
-        out += ")"
-        return(out)
-        
-    @classmethod
-    def test(cls):
-        """
-        Test different instances of what this should and should not recognize
-        """
-        parse('Date(2012-01-27T01:02:28Z)', cls)
-                
-
-class AnchorMacro(List):
-    """
-    ShowTweets Macros look like
-      <<Achor(anchor text)>>
-      
-    """
-    grammar = contiguous(
-        "Anchor(",
-        maybe_some(whitespace),
-        attr("anchorTarget", re.compile(r".+(?=\))")),
-        ")")
-            
-
-    def compose(self, parser, attr_of):
-        """
-        Can be generated as a link in Markdown
-        """
-        out = "PLACEHOLDER_ANCHOR(" + self.anchorTarget + ")"
-        return(out)
-
-        
-    @classmethod
-    def test(cls):
-        """
-        Test different instances of what this should and should not recognize
-        """
-        parse('Anchor(Stampede)', cls)
         
         
 class Macro(List):
@@ -1340,9 +1110,8 @@ class Macro(List):
         "<<",
         attr("macro",
             [TOCMacro, IncludeMacro, DivMacro, DivEndMacro,
-             SpanMacro, SpanEndMacro, BRMacro, MailToMacro, DictColumnsMacro,
-             FullSearchCachedMacro, NewPageMacro, ActionMacro, AttachListMacro,
-             ShowTweetsMacro, AnchorMacro, RSSReaderMacro, DateTimeMacro, DateMacro]),
+             SpanMacro, SpanEndMacro, BRMacro, MailToMacro, OtherMacro,
+             AttachListMacro]),
         ">>")
 
 
@@ -1370,16 +1139,8 @@ class Macro(List):
         IncludeMacro.test()
         TOCMacro.test()
         BRMacro.test()
-        DictColumnsMacro.test()
-        FullSearchCachedMacro.test()
-        NewPageMacro.test()
-        ActionMacro.test()
+        OtherMacro.test()
         AttachListMacro.test()
-        ShowTweetsMacro.test()
-        AnchorMacro.test()
-        RSSReaderMacro.test()
-        DateTimeMacro.test()
-        DateMacro.test()
         parse("<<div>>", cls)
         parse("<<div(center)>>", cls)
         parse("<<div(indent)>>", cls)
@@ -2112,6 +1873,14 @@ class SubelementSansMacro(Subelement):
          FontSizeChangeStart, FontSizeChangeEnd,
          InlineComment, PlainText, Punctuation])
 
+    def compose(self, parser, attr_of):
+        """
+        Override compose method to generate Markdown.
+        """
+        out = ""
+        for item in self:
+            out += compose(item)
+        return(out)
 
 
 
@@ -2813,8 +2582,13 @@ class TitleDiv(List):
         global pageYaml
 
         # Everything generated is placed in YAML
-        
-        pageYaml["pagetitle"] = compose(self.title)
+        # Hack it.  Titles are inserting a spurious ", *, " around punctuation
+        # Strip out those commas and spaces
+        pageTitle = compose(self.title)
+        print(pageTitle)
+        pageTitle = re.sub(r", ", "", pageTitle)
+        print(pageTitle)
+        pageYaml["pagetitle"] = pageTitle
 
         return("")
 
