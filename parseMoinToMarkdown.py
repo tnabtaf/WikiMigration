@@ -703,6 +703,15 @@ class InternalPagePath(List):
     def getPagePart(self):
         return(self.pagePart)
 
+    def hasDirectoryInPath(self):
+        """
+        Returns true if there is anything besides page name or attachment name in the path.
+        """
+        if hasattr(self, "pagePart") and self.pagePart.find("/") >= 0:
+            return(True)
+        return(False)
+
+
     @classmethod
     def test(cls):
         """
@@ -1595,14 +1604,24 @@ class InternalImage(List):
         out = "!["
         if hasattr(self, "altText"):
             out += self.altText
-        out += "](" + compose(self.imagePath) + ")"
-                    
+        out += "]"
+        # attachments seem to follow different rules than other paths.
+        # An attachment with no path is in the local directory, instead of relative to the root.
+        if self.imagePath.hasDirectoryInPath():
+            out += "(" + compose(self.imagePath) + ")"
+        else:
+            out += "(" + self.imagePath.getPagePart() + ")"
         return(out)
 
         
     def composeHtml(self):
         # Generate HTML img link as it can deal with sizes
-        out = "<img src='" + compose(self.imagePath) + "'"
+        out = "<img src='"
+        if self.imagePath.hasDirectoryInPath():
+            out += compose(self.imagePath)
+        else:
+            out += self.imagePath.getPagePart()
+        out += "'"
         
         # Add alt text
         if hasattr(self, "altText"):
@@ -2653,7 +2672,8 @@ class TitleDiv(List):
 
         pageYaml["title"] = pageTitle # TODO: can include markdown, probably won't like that
 
-        return('<div class="title">' + pageTitle + '</div>')
+        # title in text generated from page title in YAML
+        return('')
 
 
     @classmethod
