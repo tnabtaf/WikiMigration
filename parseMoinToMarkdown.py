@@ -700,6 +700,9 @@ class InternalPagePath(List):
             return(True)
         return(False)
 
+    def getPagePart(self):
+        return(self.pagePart)
+
     @classmethod
     def test(cls):
         """
@@ -1033,6 +1036,62 @@ class MailToMacro(List):
         parse("MailTo(mimodd@googlegroups.com, MiModD Google Group)", cls)
         
         
+class AnchorMacro(List):
+    """
+    <<Anchor(Stampede)>> Generates an anchor tag.
+
+    """
+    grammar = contiguous(
+        "Anchor",
+        "(",
+        attr("anchorName", re.compile(r".+(?=\))")),
+        ")")
+
+    def compose(self, parser, attr_of):
+        """
+        Override compose method to generate Markdown.
+        """
+        out = '<a name="' + self.anchorName + '"></a>'
+        return(out)
+
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        parse('Anchor(Stampede)', cls)
+
+
+class DateMacro(List):
+    """
+    <<Date(2012-01-27T01:02:28Z)>> 
+    <<DateTime(2012-01-27T01:02:28Z)>> 
+
+    Just replace with the first 8 characters
+    """
+    grammar = contiguous(
+        "Date",
+        optional("Time"),
+        "(",
+        attr("datetime", re.compile(r".+(?=\))")),
+        ")")
+
+    def compose(self, parser, attr_of):
+        """
+        Override compose method to generate Markdown.
+        """
+        out = self.datetime[0:10]
+        return(out)
+
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        parse('Date(2012-01-27T01:02:28Z)', cls)
+        parse('DateTime(2011-08-30T22:27:39Z)")', cls)
+
+
 class OtherMacro(List):
     """
     Handles the general case where we don't do anything intelligent with
@@ -1040,7 +1099,7 @@ class OtherMacro(List):
     """
     grammar = contiguous(
         attr("macroType", 
-             re.compile(r"NewPage|FullSearchCached|RSSReader|Action|ShowTweets|DictColumns|DateTime|Date|Anchor")),
+             re.compile(r"NewPage|FullSearchCached|RSSReader|Action|ShowTweets|DictColumns")),
         "(",
         optional(
             attr("theRest", re.compile(r".+(?=\))"))),
@@ -1071,9 +1130,6 @@ class OtherMacro(List):
         parse("Action(AttachFile, Attach a file to this page.)", cls)
         parse('ShowTweets(user="galaxyproject", maxTweets=20)', cls)
         parse('DictColumns(pagename=VA, names="Appliance, Technology, Domains, Description, Owners, Date Created/Updated", sort="Date Created/Updated", title="Hide", hide="Hide")', cls)
-        parse('DateTime(2011-08-30T22:27:39Z)")', cls)
-        parse('Date(2012-01-27T01:02:28Z)', cls)
-        parse('Anchor(Stampede)', cls)
 
 
 class AttachListMacro(List):
@@ -1113,7 +1169,7 @@ class Macro(List):
         "<<",
         attr("macro",
             [TOCMacro, IncludeMacro, DivMacro, DivEndMacro,
-             SpanMacro, SpanEndMacro, BRMacro, MailToMacro, OtherMacro,
+             SpanMacro, SpanEndMacro, BRMacro, MailToMacro, AnchorMacro, DateMacro, OtherMacro,
              AttachListMacro]),
         ">>")
 
@@ -1142,6 +1198,8 @@ class Macro(List):
         IncludeMacro.test()
         TOCMacro.test()
         BRMacro.test()
+        AnchorMacro.test()
+        DateMacro.test()
         OtherMacro.test()
         AttachListMacro.test()
         parse("<<div>>", cls)
@@ -1308,8 +1366,9 @@ class InternalLink(List):
         try:
             out = "[" + self.linkText + "](" + compose(self.path) + ")"
         except AttributeError:
-            # err on the safe side
-            out = "[" + compose(self.path) + "](" + compose(self.path) + ")" 
+            # link is just the page name.  Can't use path in displayed text because of
+            # added ../
+            out = "[" +  self.path.getPagePart() + "](" + compose(self.path) + ")" 
         return(out)
 
 
@@ -1319,7 +1378,7 @@ class InternalLink(List):
             out = "<a href='" + compose(self.path) + "'>" + self.linkText + "</a>"
         except AttributeError:
             # err on the safe side
-            out = ("<a href='" + compose(self.path) + "'>" +
+            out = ("<a href='" + self.path.getPagePart() + "'>" +
                    compose(self.path) + "</a>")
         return(out)
 
@@ -2279,7 +2338,8 @@ class TableRow(List):
             firstCellText += compose(item)
         out = firstCellText + "| "
         if self.rowIsHeader():
-            headerOut = "| " + "-" * (len(firstCellText)-3) + " | "
+            # header lines must have at least 3 hyphens to work.
+            headerOut = "| " + "-" * max(3, (len(firstCellText)-3)) + " | "
 
         for cell in self.rowCells:
             cellText = " "
@@ -2287,7 +2347,7 @@ class TableRow(List):
                 cellText += compose(item)
             out += cellText + " | "
             if self.rowIsHeader():
-                headerOut += "-" * (len(cellText)-1) + " | "
+                headerOut += "-" * max(3, (len(cellText)-1)) + " | "
         
         out += "\n"
         if self.rowIsHeader():
@@ -2593,7 +2653,7 @@ class TitleDiv(List):
 
         pageYaml["title"] = pageTitle # TODO: can include markdown, probably won't like that
 
-        return('<div class="title">' + compose(self.title) + '</div>')
+        return('<div class="title">' + pageTitle + '</div>')
 
 
     @classmethod
