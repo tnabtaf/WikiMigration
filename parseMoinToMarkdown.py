@@ -1015,7 +1015,7 @@ class MailToMacro(List):
         """
         Can be generated as a link in Markdown
         """
-        out = "[" + self.emailAddress + "]"
+        out = "[mailto:" + self.emailAddress + "]"
         if hasattr(self, "toText"):
             out += "(" + self.toText + ")"
         else:
@@ -1616,16 +1616,16 @@ class InternalImage(List):
         
     def composeHtml(self):
         # Generate HTML img link as it can deal with sizes
-        out = "<img src='"
+        out = '<img src="'
         if self.imagePath.hasDirectoryInPath():
             out += compose(self.imagePath)
         else:
             out += self.imagePath.getPagePart()
-        out += "'"
+        out += '"'
         
         # Add alt text
         if hasattr(self, "altText"):
-            out += " alt='" + self.altText + "'"
+            out += ' alt="' + self.altText + '"'
 
         if hasattr(self, "imageSize"):
             out += " " + self.imageSize
@@ -1692,11 +1692,11 @@ class ExternalImage(List):
         
     def composeHtml(self):
         # Generate HTML img link as it can deal with sizes
-        out = "<img src='" + compose(self.protocol) + compose(self.path) + "'"
+        out = '<img src="' + compose(self.protocol) + compose(self.path) + '"'
         
         # Add alt text
         if hasattr(self, "altText"):
-            out += " alt='" + self.altText + "'"
+            out += ' alt="' + self.altText + '"'
 
         if hasattr(self, "imageSize"):
             out += " " + self.imageSize
