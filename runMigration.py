@@ -34,7 +34,7 @@ class Argghhs(object):
         return(None)
 
 
-def traverse(srcdir, destdir, indent):
+def traverse(srcdir, destdir, depth):
     """
     Implement each individual Moin page as it's own directory, with the text of the page in
     index.md in that directory.
@@ -51,20 +51,20 @@ def traverse(srcdir, destdir, indent):
             destfile = fileDestDir + '/index.md'
             srcfile = srcdir + '/' + file
             if (not args.args.onlynew) or (not os.path.exists(destfile)):
-                print ('.' * indent, 'FILE:', file)
+                print ('.' * depth, 'FILE:', file)
                 try:
-                    parseMoinToMarkdown.translate(srcfile, destfile)
+                    parseMoinToMarkdown.translate(srcfile, destfile, depth)
                 except NotImplementedError as e:
                     notImplementedPages.append([srcfile, e.args[0]])
                     if fileDestDirNew: # clean up
                         os.rmdir(fileDestDir)
 
         for dir in dirs:
-            print ('.' * indent, 'DIR: ', dir)
+            print ('.' * depth, 'DIR: ', dir)
             newdir = destdir + '/' + dir
             if not os.path.exists(newdir):
                 os.mkdir(newdir)
-            traverse(srcdir + '/' + dir, newdir, indent+1)
+            traverse(srcdir + '/' + dir, newdir, depth+1)
         return()
     
 args = Argghhs()

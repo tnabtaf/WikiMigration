@@ -648,6 +648,7 @@ class InternalPagePath(List):
                  attr("anchorPart", re.compile(r".+?(?=]]|\||$)"))))
 
     def compose(self, parser, attr_of):
+        global pageDepth
         out = ""
         # Handle PagePath first
         if hasattr(self, "pagePart"):
@@ -657,8 +658,11 @@ class InternalPagePath(List):
             elif self.isPageRelativeLink():
                 out += self.pagePart          # keep leading ../
             elif self.isRootRelativeLink():
-                out += "/" + self.pagePart
-            # out += ".md"             # Required when viewing it inside GitHub
+                # Problem is that the "root" is different when viewing inside metalsmith and
+                # inside git hub, so can use root relative addressing (starting with /)
+                # and, pagedepth is always one greater in MD, becuase every page in 
+                # in Moin is it's own subdirectory in Markdown
+                out += "../" * (pageDepth + 1) + self.pagePart
 
         # Now the anchors; GitHub and Moin handle anchor links differently
         # See https://gist.github.com/asabaylus/3071099
@@ -1091,7 +1095,6 @@ class AttachListMacro(List):
         Test different instances of what this should and should not recognize
         """
         parse("AttachList", cls)
-
 
         
         
@@ -2560,6 +2563,8 @@ class Paragraph(List):
         """, cls)
 
 
+
+
 # ================
 # YAML Macros
 # ===============
@@ -2581,16 +2586,15 @@ class TitleDiv(List):
     def compose(self, parser, attr_of):
         global pageYaml
 
-        # Everything generated is placed in YAML
         # Hack it.  Titles are inserting a spurious ", *, " around punctuation
         # Strip out those commas and spaces
         pageTitle = compose(self.title)
-        print(pageTitle)
         pageTitle = re.sub(r", ", "", pageTitle)
-        print(pageTitle)
-        pageYaml["pagetitle"] = pageTitle
 
-        return("")
+        pageYaml["title"] = pageTitle # TODO: can include markdown, probably won't like that
+
+        return('<div class="title">' + compose(self.title) + '</div>')
+
 
     @classmethod
     def test(cls):
@@ -2836,6 +2840,9 @@ class Argghhs(object):
             "--mdpage", required=False, default=None,
             help="Where to put the resulting markdown page.")
         argParser.add_argument(
+            "--pagedepth", required=False, default=0,
+            help="How deep in the directory structure is the page.  0 = top")
+        argParser.add_argument(
             "--runtests", required=False, 
             help="Run Unit Tests.",
             action="store_true")
@@ -2903,7 +2910,10 @@ def printList(list, indent=0):
 def runTests():
     global args
     global pageYaml
-    
+    global pageDepth
+
+    pageDepth = args.args.pagedepth
+
     pageYaml = {}
 
     CellMoinFormatItem.test()
@@ -2981,13 +2991,18 @@ This is the '''hub page''' for the section of ''this wiki'' on how to deploy and
 # Can be run as a standalone program or called from another program.
 # #########################################
 
-def translate(srcFilePath, destFilePath):
+def translate(srcFilePath, destFilePath, depth):
     """
     Translate a file from MoinMoin markup to GFM.
     """
     moinFile = open(srcFilePath, "r")
     moinText = moinFile.read()
     moinFile.close()
+
+    # PageDepth is used to generate relative URLs
+    # Absolute URLs within the wiki cause problems when viewing within GitHub.
+    global pageDepth
+    pageDepth = depth
 
     # if it's creole, give it up, as the parsing errors can happen anywhere.
     if moinText[0:19] == "#format text/creole":
@@ -3010,10 +3025,10 @@ def translate(srcFilePath, destFilePath):
     markdownFile = open(destFilePath, "w")
 
     if len(pageYaml) > 0:
-        markdownFile.write("----\n")
+        markdownFile.write("---\n")
         for name, value in pageYaml.items():
             markdownFile.write(name +": " + value + "\n")
-        markdownFile.write("----\n")
+        markdownFile.write("---\n")
             
     markdownFile.write(markdownText)
     markdownFile.close()
@@ -3022,6 +3037,7 @@ def translate(srcFilePath, destFilePath):
 
     
 if __name__ == "__main__":
+    # Calling directly from command line
 
     args = Argghhs()                          # process command line arguments
 
