@@ -549,8 +549,8 @@ class CodeBlockStart(List):
     inCodeBlock = False
     grammar = contiguous(
         "{{{",
-        maybe_some(whitespace),
-        optional("#!",
+        optional(maybe_some(whitespace),
+                 "#!",
                  optional("highlight", re.compile(r" +")),
                  attr("format", re.compile(r"[^\s]+"))))
 
