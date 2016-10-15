@@ -549,6 +549,7 @@ class CodeBlockStart(List):
     inCodeBlock = False
     grammar = contiguous(
         "{{{",
+        maybe_some(whitespace),
         optional("#!",
                  optional("highlight", re.compile(r" +")),
                  attr("format", re.compile(r"[^\s]+"))))
@@ -2051,6 +2052,7 @@ class MoinList(List):
             MoinList.indentLevel = LeadingSpaces.trackIndent(
                 item, depths, MoinList.indentBase)
             out += compose(item)
+        out += "\n"             # have to have a trailing blank line.
         return(out)
 
         
@@ -2749,7 +2751,8 @@ class Element(List):
 class FormatPI(List):
     grammar = contiguous(
         "#format ",
-        attr("format", re.compile(r"[\w/]+")))
+        attr("format", re.compile(r"wiki|text/creole")),
+        TrailingWhitespace)
 
     def compose(self, parser, attr_of):
         if self.format == "wiki":
@@ -2768,6 +2771,25 @@ class FormatPI(List):
         """
         parse("#format wiki", cls)
         parse("#format text/creole", cls)
+        
+
+class LanguagePI(List):
+    grammar = contiguous(
+        "#language ",
+        attr("lang", re.compile(r"en")),
+        TrailingWhitespace)
+
+    def compose(self, parser, attr_of):
+        # just drop it
+        return("")
+
+
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        parse("#language en", cls)
         
 
 class RedirectPI(List):
@@ -2827,7 +2849,8 @@ class PragmaPI(List):
     """
     grammar = contiguous(
         re.compile(r"#pragma "),
-        attr("pragma", restline))
+        attr("pragma", restline),
+        TrailingWhitespace)
 
     def compose(self, parser, attr_of):
         return("")
@@ -2856,10 +2879,7 @@ class ProcessingInstruction(List):
     Comments, which start with ## are handled elsewhwere.
     """
     grammar = contiguous(
-        attr("pi", [FormatPI, RedirectPI, RefreshPI, PragmaPI]))
-
-    
-#        attr("pi",[FormatPI, RedirectPI, RefreshPI, PragmaPI, LanguagePI]),
+        attr("pi", [LanguagePI, FormatPI, RedirectPI, RefreshPI, PragmaPI]))
 
     
     def compose(self, parser, attr_of):
@@ -2871,6 +2891,7 @@ class ProcessingInstruction(List):
         Test different instances of what this should and should not recognize
         """
         FormatPI.test()
+        LanguagePI.test()
         #RedirectPI.test()
         #RefreshPI.test()
         PragmaPI.test()
@@ -2888,7 +2909,7 @@ class Document(List):
     Does the page arrive as a list of text lines?
     """
     grammar = contiguous(
-        maybe_some([ProcessingInstruction, Comment]),
+        maybe_some([Comment, ProcessingInstruction]),
         maybe_some(Element))
 
 
@@ -3106,8 +3127,8 @@ def translate(srcFilePath, destFilePath, depth):
 
     if len(pageYaml) > 0:
         markdownFile.write("---\n")
-        for name, value in pageYaml.items():
-            markdownFile.write(name +": " + value + "\n")
+        for name in sorted(pageYaml.keys()):
+            markdownFile.write(name +": " + pageYaml[name] + "\n")
         markdownFile.write("---\n")
             
     markdownFile.write(markdownText)
