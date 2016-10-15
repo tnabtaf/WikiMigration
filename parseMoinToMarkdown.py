@@ -1244,7 +1244,8 @@ class SectionHeader(List):
         attr("depth", re.compile(r"^=+")),
         re.compile(" +"),
         attr("name", re.compile(r".+(?= +=+)")),
-        re.compile(r" +=+\n"))
+        re.compile(r" +=+\n"),
+        maybe_some("\n"))
 
     def compose(self, parser, attr_of):
         """
@@ -1252,7 +1253,7 @@ class SectionHeader(List):
 
         How can that be dangerous?
         """
-        return("#" * len(self.depth) + " " + self.name + "\n")        
+        return("#" * len(self.depth) + " " + self.name + "\n\n")        
 
         
 
@@ -2042,7 +2043,8 @@ class MoinList(List):
     """
     grammar = contiguous(
         re.compile(r"(?=@INDENT-\d+@(\*|\d+\.))"),  # 1st item must be list item
-        attr("listItems", some(MoinListItem)))
+        attr("listItems", some(MoinListItem)),
+        maybe_some(re.compile(r" *\n")))
     indentLevel = 0
     indentBase = 0
 
