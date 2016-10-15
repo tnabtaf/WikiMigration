@@ -545,14 +545,19 @@ class CodeBlockStart(List):
     Can also specify language.
     {{{#!highlight ini
     {{{#!csv
+
+    Can also be
+    {{{
+    #!highlight python
+
     """
     inCodeBlock = False
     grammar = contiguous(
         "{{{",
         optional(maybe_some(whitespace),
                  "#!",
-                 optional("highlight", re.compile(r" +")),
-                 attr("format", re.compile(r"[^\s]+"))))
+                 optional("highlight", re.compile(r"(er)* +")),
+                 attr("format", re.compile(r"[^\s/]+"))))
 
     def compose(self, parser, attr_of):
         """
