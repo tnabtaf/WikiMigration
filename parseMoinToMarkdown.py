@@ -669,6 +669,12 @@ class InternalPagePath(List):
                 # and, pagedepth is always one greater in MD, becuase every page in 
                 # in Moin is it's own subdirectory in Markdown
                 out += "../" * (pageDepth + 1) + self.pagePart
+                """
+                if not hasattr(self, "inInclude"):
+                    out += "../" * (pageDepth + 1) + self.pagePart
+                else:
+                    out += "/" + self.pagePart
+                """
 
         # Now the anchors; GitHub and Moin handle anchor links differently
         # See https://gist.github.com/asabaylus/3071099
@@ -833,10 +839,12 @@ class IncludeMacro(List):
         """
         Override compose method to generate Markdown.
         """
+        self.pagePath.inInclude = True
+        out = "PLACEHOLDER_INCLUDE(" + compose(self.pagePath)
         if self.params:
-            return("PLACEHOLDER_INCLUDE(" + compose(self.pagePath) + compose(self.params) + ")")
-        else:
-            return("PLACEHOLDER_INCLUDE(" + compose(self.pagePath) + ")")
+            out += compose(self.params) 
+        out += ")"
+        return(out)
 
     @classmethod
     def test(cls):
@@ -1371,7 +1379,8 @@ class InternalLink(List):
         "[[",
         maybe_some(whitespace),
         attr("path", InternalPagePath),
-        optional("|", attr("linkText", re.compile(r".+?(?=\]\])"))),
+        optional("|", attr("linkText", re.compile(r".+?(?=(\||\]\]))"))),
+        optional("|", attr("extras", re.compile(r".*?(?=\]\])"))),
         "]]")
 
     def compose(self, parser, attr_of):
@@ -1379,6 +1388,8 @@ class InternalLink(List):
         Override compose method to generate Markdown.
         """
         # Try with link text first
+        # TODO: Nothing is done with the extras.
+
         try:
             out = "[" + self.linkText + "](" + compose(self.path) + ")"
         except AttributeError:
@@ -1413,7 +1424,7 @@ class InternalLink(List):
         parse("[[path/more/path/Page Name|Whitespace test 1]]", cls)
         parse("[[path/more/path/Page Name| Whitespace test 2 ]]", cls)
         parse("[[FrontPage/Use Galaxy|Use Galaxy]]", cls)
-
+        parse("[[Admin/Config/ApacheProxy|Apache|]]", cls)
 
 class InterWikiMapEntry:
     """
@@ -1689,10 +1700,13 @@ class ExternalImage(List):
         """
         Use Markdown image notation
         """
-        out = "!["
-        if hasattr(self, "altText"):
-            out += self.altText
-        out += "](" + compose(self.protocol) + compose(self.path) + ")"
+        if self.needsHtmlRendering():
+            out = self.composeHtml()
+        else:
+            out = "!["
+            if hasattr(self, "altText"):
+                out += self.altText
+            out += "](" + compose(self.protocol) + compose(self.path) + ")"
                     
         return(out)
 
@@ -2229,7 +2243,7 @@ class CellClass(List):
         "class=", attr("cellClass", QuotedString))     
 
     def compose(self, parser, attr_of):
-        return("CLASS=" + compose(self.cellClass))
+        return("class=" + compose(self.cellClass))
 
     def isHeader(self):
         return(self.cellClass.justTheString().lower() == "th")
@@ -2246,7 +2260,8 @@ class TableCell(List):
         optional(
             "<",
             some([attr("cellClass", CellClass),
-                  attr("cellFormat", some([CellMoinFormatItem, omit(" ")]))]),
+                  attr("cellFormat", some([CellMoinFormatItem, omit(" ")])),
+                  whitespace]),
             ">"),
         maybe_some(" "),
         attr("cellContent", maybe_some(Subelement)), 
@@ -2262,12 +2277,12 @@ class TableCell(List):
         """
 
         # start simple; TODO
+        out = "" 
         try:
-            out = ""
             for item in self.cellFormat:
                 out += compose(item)
         except AttributeError:
-            out = ""
+            pass
 
         try:
             for item in self.cellContent:
@@ -2457,7 +2472,7 @@ class Table(List):
         if self.needsHTMLRendering():
             out = self.composeHtml()
         else:
-            out = ""
+            out = "\n"   # Tables have to start with a leading blank line in some (all?) circumstances
             for row in self.tableRows:
                 out += compose(row)
             
@@ -2776,8 +2791,8 @@ class FormatPI(List):
         """
         Test different instances of what this should and should not recognize
         """
-        parse("#format wiki", cls)
-        parse("#format text/creole", cls)
+        parse("#format wiki\n", cls)
+        parse("#format text/creole\n", cls)
         
 
 class LanguagePI(List):
@@ -2796,7 +2811,7 @@ class LanguagePI(List):
         """
         Test different instances of what this should and should not recognize
         """
-        parse("#language en", cls)
+        parse("#language en\n", cls)
         
 
 class RedirectPI(List):
@@ -2867,7 +2882,7 @@ class PragmaPI(List):
         """
         Test different instances of what this should and should not recognize
         """
-        parse("#pragma section-numbers off", cls)
+        parse("#pragma section-numbers off\n", cls)
 
         
 class ProcessingInstruction(List):
