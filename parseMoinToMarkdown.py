@@ -984,8 +984,8 @@ class ExternalPagePath(str):
         parse("FrontPage/Use Galaxy#This Part of the page", cls)
         parse("/Includes", cls)
         parse("developers.google.com/+/features/sign-in", cls)
-
-
+        parse("gridscheduler.sourceforge.net/htmlman/htmlman5/sge_request.html", cls)
+        testFail("gridscheduler.sourceforge.net/htmlman/htmlman5/sge_request.html|~/.sge_request", cls)
 
         
 # ################
@@ -1950,7 +1950,30 @@ class ImageLink(List):
         parse('[[http://workflow4metabolomics.org/training/W4Mcourse2015|{{attachment:Images/Logos/w4m_logo_small.png|Traitement des données métabolomiques sous Galaxy|height="80"}}]]', cls)
         parse('[[http://wacd.abrf.org/|{{attachment:Images/Logos/WACD.png|Western Association of Core Directors (WACD) Annual Meeting|height="70"}}]]', cls)
 
-        
+
+class TextToEndOfLinkClause(List):
+    """
+    Used to match to the end of a clause in a link.  Clauses end with either | or ]].
+
+    This class only exists to address a bug (I think) in PyPeg, 
+    """
+    grammar = contiguous(
+        attr("textToEndOfLinkClause", re.compile(r".+?(?=(\||\]\]))")))
+
+    def compose(self, parser, attr_of):
+        return(self.textToEndOfLinkClause)
+
+
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        return
+        parse("SW4) The Galaxy Platform for Multi-Omic Data Analysis and Informatics", cls)
+        parse("(SW4) The Galaxy Platform for Multi-Omic Data Analysis and Informatics", cls)
+
+
 class ExternalLink(List):
     """
     Links that go outside the wiki.
@@ -1962,10 +1985,9 @@ class ExternalLink(List):
         attr("path", ExternalPagePath),
         maybe_some(whitespace),
         optional("|", maybe_some(whitespace),
-                 optional(attr("linkText", [Image, re.compile(r".+?(?=\]\]|\|)")])),
+                 optional(attr("linkText", [Image, TextToEndOfLinkClause]),
                  optional("|", maybe_some(whitespace),
-                          optional(attr("theRest", re.compile(r".+?(?=\]\])"))))),
-    
+                          optional(attr("theRest", TextToEndOfLinkClause))))),
         "]]")
 
     def compose(self, parser, attr_of):
@@ -1973,7 +1995,8 @@ class ExternalLink(List):
         Override compose method to generate Markdown.
         """
         linkOut = compose(self.protocol) + compose(self.path)
-        # TODO: Not currently rendering theRest
+        # Not currently rendering theRest.  The rest is usually target or moin-specific.
+        # We can live without both. 
         if hasattr(self, "linkText"):
             out = "[" + compose(self.linkText) + "](" + linkOut + ")"
         else:
@@ -1984,10 +2007,9 @@ class ExternalLink(List):
     def composeHtml(self):
         linkOut = compose(self.protocol) + compose(self.path)
         # TODO: Not currently rendering theRest.
-        try:
-            out = "<a href='" + linkOut + "'>" + self.linkText + "</a>"
-        except AttributeError:
-            # err on the safe side
+        if hasattr(self, "linkText"):
+            out = "<a href='" + linkOut + "'>" + compose(self.linkText) + "</a>"
+        else:
             out = "<a href='" + linkOut + "'>" + linkOut + "</a>"
         return(out)
 
@@ -1998,17 +2020,26 @@ class ExternalLink(List):
         """
         Test different instances of what this should and should not recognize
         """
+        TextToEndOfLinkClause.test()
         LinkProtocol.test()
+        ExternalPagePath.test()
+        Image.test()
         parse("[[http://link.com]]", cls)
         parse("[[ftp://this.here.com/path/file.txt]]", cls)
         parse("[[https://link.com/]]", cls)
         parse("[[http://link.com|Linkin somewhere]]", cls)
         parse("[[ftp://this.here.com/path/file.txt|Text for link.]]", cls)
         parse("[[https://link.com/| Whitespace test ]]", cls)
+        parse("[[https://planemo.readthedocs.org/en/latest/|Planemo|]]", cls)
+        '''print(parse(
+            "[[https://conf.abrf.org/the-galaxy-platform|(SW4) The Galaxy Platform for Multi-Omic Data Analysis and Informatics]]", 
+            cls).linkText)'''
         parse('[[http://genomebiology.com/2010/11/8/R86|{{attachment:GenomeBiologyColver20108.gif|Genome Biology|height="125"}}]]', cls)
+        #print(compose(parse('[[http://i.imgur.com/OCA45pA.png|{{http://i.imgur.com/OCA45pA.png||width="75%"}}|&do=get,target="_blank"]]', cls).linkText))
         parse('[[http://i.imgur.com/OCA45pA.png|{{http://i.imgur.com/OCA45pA.png||width="75%"}}|&do=get,target="_blank"]]', cls)
+        #print(parse('[[http://gridscheduler.sourceforge.net/htmlman/htmlman5/sge_request.html|~/.sge_request]]', cls).linkText)
+        #parse('[[http://gridscheduler.sourceforge.net/htmlman/htmlman5/sge_request.html|~/.sge_request]]', cls)
 
-       
 
 class Link(List):
     """
