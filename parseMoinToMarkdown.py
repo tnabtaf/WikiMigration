@@ -14,7 +14,7 @@ import argparse
 from pypeg2 import *                           # parser library.
 import re
 import os
-
+import os.path
 
 
 # ################
@@ -655,26 +655,7 @@ class InternalPagePath(List):
 
     def compose(self, parser, attr_of):
         global pageDepth
-        out = ""
-        # Handle PagePath first
-        if hasattr(self, "pagePart"):
-            # invert from Moin to GFM.
-            if self.isSubPageLink():
-                out += self.pagePart[1:]      # strip leading /
-            elif self.isPageRelativeLink():
-                out += self.pagePart          # keep leading ../
-            elif self.isRootRelativeLink():
-                # Problem is that the "root" is different when viewing inside metalsmith and
-                # inside git hub, so can use root relative addressing (starting with /)
-                # and, pagedepth is always one greater in MD, becuase every page in 
-                # in Moin is it's own subdirectory in Markdown
-                out += "../" * (pageDepth + 1) + self.pagePart
-                """
-                if not hasattr(self, "inInclude"):
-                    out += "../" * (pageDepth + 1) + self.pagePart
-                else:
-                    out += "/" + self.pagePart
-                """
+        out = self.getWikiRootPath() + "/index.md"    
 
         # Now the anchors; GitHub and Moin handle anchor links differently
         # See https://gist.github.com/asabaylus/3071099
@@ -683,8 +664,10 @@ class InternalPagePath(List):
             anchor = re.sub('[^\w \-]', '', anchor)   # keep only alphanumerics, spaces, hyphens
             anchor = re.sub(' ', '-', anchor)
             out += "#" + anchor
+
         return(out)
-    
+
+
 
     def isSubPageLink(self):
         """
@@ -724,6 +707,42 @@ class InternalPagePath(List):
         return(False)
 
 
+    def getWikiRootPath(self):
+        """
+        Convert a moin path to an MD path rooted in at the base of MD tree
+        """
+        global wikiRoot
+        global wikiRootParts
+        wikiRootPath = wikiRoot
+        # Handle PagePath first
+        if hasattr(self, "pagePart"):
+            # invert from Moin to GFM.
+            if self.isSubPageLink():
+                # looks like /SupPage in Moin
+                wikiRootPath += self.pagePart
+            elif self.isPageRelativeLink():
+                # looks like ../OtherPage or ../../OtherPage
+                # Each ../ takes a part off the wiki root path
+                peelBack = (self.pagePart.count("../") * -1) + 1
+                if peelBack != 0:
+                    peeledBackRoot = "/" + "/".join(wikiRootParts[0:peelBack])
+                else:
+                    peeledBackRoot = wikiRoot
+                wikiRootPath = peeledBackRoot + "/" + self.pagePart.replace("../", "")
+
+            elif self.isRootRelativeLink():
+                # Problem is that the "root" is different when viewing inside metalsmith and
+                # inside git hub, so can use root relative addressing (starting with /)
+                # and, pagedepth is always one greater in MD, becuase every page in 
+                # in Moin is it's own subdirectory in Markdown
+                # TREMENDOUS HACK.
+                wikiRootPath = "/" + wikiRootParts[0] + "/" + self.pagePart
+
+        return(wikiRootPath)
+ 
+
+
+
     @classmethod
     def test(cls):
         """
@@ -735,6 +754,208 @@ class InternalPagePath(List):
         parse("../Includes/Something", cls)
         parse("#Internal to this page", cls)
         parse("Teach/Trainers#LUMC, ErasmusMC, DTL Learning Programme", cls)
+
+
+class InternalImagePath(List):
+    """
+    path to an internal Image.  Attached images have different rules than pages.
+
+    Images attached to the current page don't have any prefix in moin:
+
+      thisIsLocal.png
+
+    Images attached elsewhere have paths:
+
+      Images/Logos/Utah.png
+      ../SiblingPage/Nebraska.png
+
+    Internal pages can match on fewer characters than external pages
+    in the page part of the path.  The anchor part can contain much more.
+    Used when we know we have a page name.
+
+    Allowable characters for general URLs are
+      ALPHA / DIGIT / "-" / "." / "_" / "~" 
+      ":" / "/" / "?" / "#" / "[" / "]" / "@"  - can't handle [] internally
+      "!" / "$" / "&" / "'" / "(" / ")"        - can't handle () ...
+      / "*" / "+" / "," / ";" / "="            - can't handle ,  ...
+      spaces
+      % 
+    in any combination
+    See http://stackoverflow.com/questions/1856785/characters-allowed-in-a-url
+    """
+    grammar = contiguous(
+        optional(attr("imagePath", re.compile(r"[\w\-\.~:/?@!\$&'\*+;= %]+"))))
+
+    def compose(self, parser, attr_of):
+        global pageDepth
+        out = self.getWikiRootPath()
+
+        return(out)
+
+    def isSubPageLink(self):
+        """
+        Return true if this image is hung off of a subpage. Subpage links start with / 
+        """
+        return(self.imagePath[0] == "/")
+        
+    def isPageRelativeLink(self):
+        """
+        Return true if this link uses a relative path to another wiki page.
+        Relative links start with ../
+        """
+        return(self.imagePath[0:3] == "../")
+        
+    def isLocalPageLink(self):
+        """
+        Image is attached to this page.  Won't have a "/" in the path.
+        """
+        return(not self.hasDirectoryInPath())
+
+    def isRootRelativeLink(self):
+        """
+        Return true if this link uses a path that is relative to the wiki root.
+        Root relative links start with a wiki page name
+        """
+        if not self.isSubPageLink() and not self.isPageRelativeLink() and not self.isLocalPageLink():
+            return(True)
+        return(False)
+
+    def getImagePath(self):
+        return(self.imagePath)
+
+    def hasDirectoryInPath(self):
+        """
+        Returns true if there is anything besides page name or attachment name in the path.
+        """
+        if self.imagePath.find("/") >= 0:
+            return(True)
+        return(False)
+
+
+    def getWikiRootPath(self):
+        """
+        Convert a moin path to an MD path rooted in at the base of MD tree
+        """
+        global wikiRoot
+        global wikiRootParts
+        wikiRootPath = wikiRoot
+
+        if self.isLocalPageLink():
+            # looks like Utah.png in moin
+            wikiRootPath += "/" + self.imagePath
+        elif self.isSubPageLink():
+            # looks like /SupPage/Utah.png in Moin
+            wikiRootPath += self.imagePath
+        elif self.isPageRelativeLink():
+            # looks like ../OtherPage/Utah.png or ../../OtherPage/Utah.png
+            # Each ../ takes a part off the wiki root path
+            peelBack = (self.imagePath.count("../") * -1) + 1
+            if peelBack != 0:
+                peeledBackRoot = "/" + "/".join(wikiRootParts[0:peelBack])
+            else:
+                peeledBackRoot = wikiRoot
+            wikiRootPath = peeledBackRoot + "/" + self.imagePath.replace("../", "")
+
+        elif self.isRootRelativeLink():
+            # Looks like Images/Utah.png in moin
+            # TREMENDOUS HACK.
+            wikiRootPath = "/" + wikiRootParts[0] + "/" + self.imagePath
+
+        return(wikiRootPath)
+ 
+
+
+
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        parse("FrontPage/Use Galaxy", cls)
+        parse("FrontPage/Use Galaxy#This Part of the page", cls)
+        parse("/Includes", cls)
+        parse("../Includes/Something", cls)
+        parse("#Internal to this page", cls)
+        parse("Teach/Trainers#LUMC, ErasmusMC, DTL Learning Programme", cls)
+
+
+class InternalImage(List):
+    """
+    Internal images are shown with
+
+      {{attachment:Images/Search.png|Search|width="120"}}
+      {{attachment:Images/Search.png||width="120"}}
+      {{attachment:Images/Search.png|Search|}}
+      {{attachment:Images/Search.png|Search}}
+      {{attachment:Images/Search.png}}
+      {{attachment:tool_labels.png|Tool labels}}
+
+    Many images include sizing, and that is not supported in Markdown.
+    """
+    grammar = contiguous(
+        "{{attachment:",
+        attr("imagePath", InternalImagePath), 
+        optional(
+            "|",
+            optional(attr("altText", re.compile(r"[^}|]*"))),
+            optional(
+                "|",
+                attr("imageSize", re.compile(r"[^\}]*")))),
+        "}}")
+
+    def compose(self, parser, attr_of):
+        """
+        Use Markdown image notation
+        """
+        out = "!["
+        if hasattr(self, "altText"):
+            out += self.altText
+        out += "]"
+        # attachments seem to follow different rules than other paths.
+        # An attachment with no path is in the local directory, instead of relative to the root.
+        
+        out += "(" + self.imagePath.getWikiRootPath() + ")"
+        return(out)
+
+        
+    def composeHtml(self):
+        # Generate HTML img link as it can deal with sizes
+        out = '<img src="' + self.imagePath.getWikiRootPath() + '"'
+        
+        # Add alt text
+        if hasattr(self, "altText"):
+            out += ' alt="' + self.altText + '"'
+
+        if hasattr(self, "imageSize"):
+            out += " " + self.imageSize
+        out += " />"
+                    
+        return(out)
+
+
+    def needsHtmlRendering(self):
+        """
+        Returns true if image needs HTML rendering.
+        """
+        if hasattr(self, "imageSize"):
+            return(True)
+        return(False)
+
+
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        parse('{{attachment:Images/GalaxyLogos/GTN16.png|Training offered by GTN Member}}', cls)
+        parse('{{attachment:GetGalaxySearch.png}}', cls)
+        parse('{{attachment:Im/L/GGS.png|S all}}', cls)
+        parse('{{attachment:Is/L/G.png|s a|width="120"}}', cls)
+        parse('{{attachment:Images/Logos/w4m_logo_small.png|Traitement des données métabolomiques sous Galaxy|height="80"}}', cls)
+        parse('{{attachment:Images/Logos/WACD.png|Western Association of Core Directors (WACD) Annual Meeting|height="70"}}', cls)
+
+
+
 
 
 class ExternalPagePath(str):
@@ -1306,59 +1527,6 @@ class LinkProtocol(List):
         parse("https://", cls)
 
     
-class ExternalLink(List):
-    """
-    Links that go outside the wiki.
-    """
-    grammar = contiguous(
-        "[[",
-        maybe_some(whitespace),
-        attr("protocol", LinkProtocol),
-        attr("path", ExternalPagePath),
-        maybe_some(whitespace),
-        optional("|", maybe_some(whitespace),
-                 attr("linkText", re.compile(r".+?(?=\]\])"))),
-        "]]")
-
-    def compose(self, parser, attr_of):
-        """
-        Override compose method to generate Markdown.
-        """
-        linkOut = compose(self.protocol) + compose(self.path)
-        # Try with link text first
-        try:
-            out = "[" + self.linkText + "](" + linkOut + ")"
-        except AttributeError:
-            # err on the safe side
-            out = "[" + linkOut + "](" + linkOut + ")" 
-        return(out)
-
-
-    def composeHtml(self):
-        linkOut = compose(self.protocol) + compose(self.path)
-        # Try with link text first
-        try:
-            out = "<a href='" + linkOut + "'>" + self.linkText + "</a>"
-        except AttributeError:
-            # err on the safe side
-            out = "<a href='" + linkOut + "'>" + linkOut + "</a>"
-        return(out)
-
-
-        
-    @classmethod
-    def test(cls):
-        """
-        Test different instances of what this should and should not recognize
-        """
-        LinkProtocol.test()
-        parse("[[http://link.com]]", cls)
-        parse("[[ftp://this.here.com/path/file.txt]]", cls)
-        parse("[[https://link.com/]]", cls)
-        parse("[[http://link.com|Linkin somewhere]]", cls)
-        parse("[[ftp://this.here.com/path/file.txt|Text for link.]]", cls)
-        parse("[[https://link.com/| Whitespace test ]]", cls)
-
 
 class InternalLink(List):
     """
@@ -1592,87 +1760,6 @@ class InterWikiLink(List):
         parse("[[bbissue:321|this bb issue]]", cls)
 
         
-class InternalImage(List):
-    """
-    Internal images are shown with
-
-      {{attachment:Images/Search.png|Search|width="120"}}
-      {{attachment:Images/Search.png||width="120"}}
-      {{attachment:Images/Search.png|Search|}}
-      {{attachment:Images/Search.png|Search}}
-      {{attachment:Images/Search.png}}
-
-    Many images include sizing, and that is not supported in Markdown.
-    """
-    grammar = contiguous(
-        "{{attachment:",
-        attr("imagePath", InternalPagePath),
-        optional(
-            "|",
-            optional(attr("altText", re.compile(r"[^}|]*"))),
-            optional(
-                "|",
-                attr("imageSize", re.compile(r"[^\}]*")))),
-        "}}")
-
-    def compose(self, parser, attr_of):
-        """
-        Use Markdown image notation
-        """
-        out = "!["
-        if hasattr(self, "altText"):
-            out += self.altText
-        out += "]"
-        # attachments seem to follow different rules than other paths.
-        # An attachment with no path is in the local directory, instead of relative to the root.
-        if self.imagePath.hasDirectoryInPath():
-            out += "(" + compose(self.imagePath) + ")"
-        else:
-            out += "(" + self.imagePath.getPagePart() + ")"
-        return(out)
-
-        
-    def composeHtml(self):
-        # Generate HTML img link as it can deal with sizes
-        out = '<img src="'
-        if self.imagePath.hasDirectoryInPath():
-            out += compose(self.imagePath)
-        else:
-            out += self.imagePath.getPagePart()
-        out += '"'
-        
-        # Add alt text
-        if hasattr(self, "altText"):
-            out += ' alt="' + self.altText + '"'
-
-        if hasattr(self, "imageSize"):
-            out += " " + self.imageSize
-        out += " />"
-                    
-        return(out)
-
-
-    def needsHtmlRendering(self):
-        """
-        Returns true if image needs HTML rendering.
-        """
-        if hasattr(self, "imageSize"):
-            return(True)
-        return(False)
-
-
-    @classmethod
-    def test(cls):
-        """
-        Test different instances of what this should and should not recognize
-        """
-        parse('{{attachment:Images/GalaxyLogos/GTN16.png|Training offered by GTN Member}}', cls)
-        parse('{{attachment:GetGalaxySearch.png}}', cls)
-        parse('{{attachment:Im/L/GGS.png|S all}}', cls)
-        parse('{{attachment:Is/L/G.png|s a|width="120"}}', cls)
-        parse('{{attachment:Images/Logos/w4m_logo_small.png|Traitement des données métabolomiques sous Galaxy|height="80"}}', cls)
-        parse('{{attachment:Images/Logos/WACD.png|Western Association of Core Directors (WACD) Annual Meeting|height="70"}}', cls)
-
 
 class ExternalImage(List):
     """
@@ -1793,6 +1880,7 @@ class Image(List):
         parse('{{attachment:Is/L/G.png|s a|width="120"}}', cls)
         parse('{{attachment:Images/Logos/w4m_logo_small.png|Traitement des données métabolomiques sous Galaxy|height="80"}}', cls)
         parse('{{attachment:Images/Logos/WACD.png|Western Association of Core Directors (WACD) Annual Meeting|height="70"}}', cls)
+        parse('{{attachment:GenomeBiologyColver20108.gif|Genome Biology|height="125"}}', cls)
 
         
 
@@ -1863,6 +1951,63 @@ class ImageLink(List):
         parse('[[http://wacd.abrf.org/|{{attachment:Images/Logos/WACD.png|Western Association of Core Directors (WACD) Annual Meeting|height="70"}}]]', cls)
 
         
+class ExternalLink(List):
+    """
+    Links that go outside the wiki.
+    """
+    grammar = contiguous(
+        "[[",
+        maybe_some(whitespace),
+        attr("protocol", LinkProtocol),
+        attr("path", ExternalPagePath),
+        maybe_some(whitespace),
+        optional("|", maybe_some(whitespace),
+                 optional(attr("linkText", [Image, re.compile(r".+?(?=\]\]|\|)")])),
+                 optional("|", maybe_some(whitespace),
+                          optional(attr("theRest", re.compile(r".+?(?=\]\])"))))),
+    
+        "]]")
+
+    def compose(self, parser, attr_of):
+        """
+        Override compose method to generate Markdown.
+        """
+        linkOut = compose(self.protocol) + compose(self.path)
+        # TODO: Not currently rendering theRest
+        if hasattr(self, "linkText"):
+            out = "[" + compose(self.linkText) + "](" + linkOut + ")"
+        else:
+            out = "[" + linkOut + "](" + linkOut + ")" 
+        return(out)
+
+
+    def composeHtml(self):
+        linkOut = compose(self.protocol) + compose(self.path)
+        # TODO: Not currently rendering theRest.
+        try:
+            out = "<a href='" + linkOut + "'>" + self.linkText + "</a>"
+        except AttributeError:
+            # err on the safe side
+            out = "<a href='" + linkOut + "'>" + linkOut + "</a>"
+        return(out)
+
+
+        
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        LinkProtocol.test()
+        parse("[[http://link.com]]", cls)
+        parse("[[ftp://this.here.com/path/file.txt]]", cls)
+        parse("[[https://link.com/]]", cls)
+        parse("[[http://link.com|Linkin somewhere]]", cls)
+        parse("[[ftp://this.here.com/path/file.txt|Text for link.]]", cls)
+        parse("[[https://link.com/| Whitespace test ]]", cls)
+        parse('[[http://genomebiology.com/2010/11/8/R86|{{attachment:GenomeBiologyColver20108.gif|Genome Biology|height="125"}}]]', cls)
+        parse('[[http://i.imgur.com/OCA45pA.png|{{http://i.imgur.com/OCA45pA.png||width="75%"}}|&do=get,target="_blank"]]', cls)
+
        
 
 class Link(List):
@@ -1905,7 +2050,7 @@ class Link(List):
         parse("[[https://developers.google.com/+/features/sign-in|Google+ sign-in]]", cls)
         parse("[[http://www.citeulike.org/group/16008/order/to_read,desc,|Galaxy papers on CituLike]]", cls)
         parse("[[http://bioblend.readthedocs.org/en/latest/|bioblend]]", cls)
-
+        parse('[[attachment:jetstream_GettingStarted.png|{{attachment:jetstream_GettingStarted.png||width="75%"}}|&do=get,target="_blank"]]', cls)
 
 # =============
 # Subelements
@@ -2963,6 +3108,9 @@ class Argghhs(object):
             "--mdpage", required=False, default=None,
             help="Where to put the resulting markdown page.")
         argParser.add_argument(
+            "--wikiroot", required=False, default="",
+            help="Root of all links used inside the wiki.")
+        argParser.add_argument(
             "--pagedepth", required=False, default=0,
             help="How deep in the directory structure is the page.  0 = top")
         argParser.add_argument(
@@ -3114,18 +3262,22 @@ This is the '''hub page''' for the section of ''this wiki'' on how to deploy and
 # Can be run as a standalone program or called from another program.
 # #########################################
 
-def translate(srcFilePath, destFilePath, depth):
+def translate(srcFilePath, destFilePath, root, depth):
     """
     Translate a file from MoinMoin markup to GFM.
     """
     moinFile = open(srcFilePath, "r")
     moinText = moinFile.read()
     moinFile.close()
-
+    # wikiroot is used to generate all absolute links.
     # PageDepth is used to generate relative URLs
-    # Absolute URLs within the wiki cause problems when viewing within GitHub.
     global pageDepth
     pageDepth = depth
+    global wikiRoot
+    wikiRoot = root
+    global wikiRootParts
+    wikiRootParts = wikiRoot.split("/")
+    wikiRootParts.pop(0) # first one is empty
 
     # if it's creole, give it up, as the parsing errors can happen anywhere.
     if moinText[0:19] == "#format text/creole":
@@ -3163,6 +3315,15 @@ if __name__ == "__main__":
     # Calling directly from command line
 
     args = Argghhs()                          # process command line arguments
+
+    global pageDepth
+    pageDepth = args.args.pagedepth
+    global wikiRoot
+    wikiRoot = args.args.wikiroot
+    global wikiRootParts
+    wikiRootParts = wikiRoot.split("/")
+    wikiRootParts.pop(0) # first one is empty
+
 
     if args.args.runtests:
         runTests()
