@@ -19,13 +19,16 @@ class Argghhs(object):
     def __init__(self):
         argParser = argparse.ArgumentParser(
             description='Convert all pages from MoinMoin to Markdown.',
-            epilog = 'Example:\n    runMigration.py --srcdir="MoinPages" --destdir="MarkdownPages --onlynew')
+            epilog = 'Example:\n    runMigration.py --srcdir="MoinPages" --destdir="MarkdownPages --wikiroot="/src" --onlynew')
         argParser.add_argument(
             "--srcdir", required=True,
             help="Path of directory to get Moin pages from")
         argParser.add_argument(
             "--destdir", required=True,
             help="Path of directory to put translated pages into")
+        argParser.add_argument(
+            "--wikiroot", required=True,
+            help="Root of all links used inside the wiki.")
         argParser.add_argument(
             "--onlynew", required=False, action="store_true",
             help="Only translate pages you haven't already translated")
@@ -34,7 +37,7 @@ class Argghhs(object):
         return(None)
 
 
-def traverse(srcdir, destdir, depth):
+def traverse(srcdir, destdir, wikiroot, depth):
     """
     Implement each individual Moin page as it's own directory, with the text of the page in
     index.md in that directory.
@@ -43,7 +46,8 @@ def traverse(srcdir, destdir, depth):
     
     for root, dirs, files in os.walk(srcdir):
         for file in files:
-            fileDestDir = destdir + '/' + file[:-5]
+            pageName = file[:-5]
+            fileDestDir = destdir + '/' + pageName
             fileDestDirNew = False
             if not os.path.exists(fileDestDir):
                 os.mkdir(fileDestDir)
@@ -53,7 +57,7 @@ def traverse(srcdir, destdir, depth):
             if (not args.args.onlynew) or (not os.path.exists(destfile)):
                 print ('.' * depth, 'FILE:', file)
                 try:
-                    parseMoinToMarkdown.translate(srcfile, destfile, depth)
+                    parseMoinToMarkdown.translate(srcfile, destfile, wikiroot + "/" + pageName, depth)
                 except NotImplementedError as e:
                     notImplementedPages.append([srcfile, e.args[0]])
                     if fileDestDirNew: # clean up
@@ -64,14 +68,14 @@ def traverse(srcdir, destdir, depth):
             newdir = destdir + '/' + dir
             if not os.path.exists(newdir):
                 os.mkdir(newdir)
-            traverse(srcdir + '/' + dir, newdir, depth+1)
+            traverse(srcdir + '/' + dir, newdir, wikiroot + "/" + dir, depth+1)
         return()
     
 args = Argghhs()
 
 # Walk source dir, translating pages as we find them.
 
-traverse(args.args.srcdir, args.args.destdir, 0)
+traverse(args.args.srcdir, args.args.destdir, args.args.wikiroot, 0)
 
 print("Number of Not Implemented pages: " + str(len(notImplementedPages)))
 for probs in notImplementedPages:
