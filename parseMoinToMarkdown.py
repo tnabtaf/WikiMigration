@@ -782,9 +782,13 @@ class InternalImagePath(List):
       % 
     in any combination
     See http://stackoverflow.com/questions/1856785/characters-allowed-in-a-url
+
+    NOTE: the path must end in a recognized image extension.  See the grammar 
+    for what is recognized.
     """
     grammar = contiguous(
-        optional(attr("imagePath", re.compile(r"[\w\-\.~:/?@!\$&'\*+;= %]+"))))
+        attr("imagePath", 
+                      re.compile(r"[\w\-\.~:/?@!\$&'\*+;= %]+?\.(jpg|jpeg|JPG|JPEG|gif|GIF|png|PNG)")))
 
     def compose(self, parser, attr_of):
         global pageDepth
@@ -864,19 +868,15 @@ class InternalImagePath(List):
         return(wikiRootPath)
  
 
-
-
     @classmethod
     def test(cls):
         """
         Test different instances of what this should and should not recognize
         """
-        parse("FrontPage/Use Galaxy", cls)
-        parse("FrontPage/Use Galaxy#This Part of the page", cls)
-        parse("/Includes", cls)
-        parse("../Includes/Something", cls)
-        parse("#Internal to this page", cls)
-        parse("Teach/Trainers#LUMC, ErasmusMC, DTL Learning Programme", cls)
+        parse("FrontPage/UseGalaxy.png", cls)
+        parse("/Includes/thing.jpg", cls)
+        parse("../Includes/Something/thing.with.jpg", cls)
+        parse("Teach/Trainers/panic/panic.JPEG", cls)
 
 
 class InternalImage(List):
@@ -895,6 +895,7 @@ class InternalImage(List):
     grammar = contiguous(
         "{{attachment:",
         attr("imagePath", InternalImagePath), 
+        maybe_some(whitespace),
         optional(
             "|",
             optional(attr("altText", re.compile(r"[^}|]*"))),
@@ -1396,7 +1397,7 @@ class AttachListMacro(List):
         """
         parse("AttachList", cls)
 
-        
+
         
 class Macro(List):
     """
@@ -1525,8 +1526,133 @@ class LinkProtocol(List):
         parse("http://", cls)
         parse("ftp://", cls)
         parse("https://", cls)
+        testFail("attachment:", cls)
 
     
+class TextToEndOfLinkClause(List):
+    """
+    Used to match to the end of a clause in a link.  Clauses end with either | or ]].
+
+    This class only exists to address a bug (I think) in PyPeg, 
+    """
+    grammar = contiguous(
+        attr("textToEndOfLinkClause", re.compile(r".+?(?=(\||\]\]))")))
+
+    def compose(self, parser, attr_of):
+        return(self.textToEndOfLinkClause)
+
+    def composeHtml(self):
+        # no different
+        return(self.textToEndOfLinkClause)
+
+
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        return
+        parse("SW4) The Galaxy Platform for Multi-Omic Data Analysis and Informatics", cls)
+        parse("(SW4) The Galaxy Platform for Multi-Omic Data Analysis and Informatics", cls)
+
+
+
+class AttachmentLink(List):
+    """
+    Links that go to attachments on the wiki.
+
+    Note, these are different from Image links which actuall show the image on
+    the page.  Attachment links can go to images or documents and display 
+    images or text.
+
+    Attachment links that show text look like:
+      [[attachment:Documents/Presentations/2016_IIBMP.pdf|Slides]]
+    This gets rendered as
+      (Slides)[PLACEHOLDER_ATTACHMENT_URL/src/Documents/Presentations/2016_IIBMP.pdf]
+  
+    Attachment links that show images look like:
+      [[attachment:AWSSetRegion.png|{{attachment:AWSSetRegion.png|Set region|width="200"}}]]
+    This should get rendered as
+      <a href="/PathToCurrentPage/AWSSetRegion.png">
+        <img src="/PathToCurrentPage/AWSSetRegion.png" alt="Set Region" width="200" />
+      </a>
+
+    Attachment links that open the target page in a new window look like:
+      [[attachment:AWSBig.png|{{attachment:AWS.png|Set|width="200"}}|&do=get,target="_blank"]]
+    This should get rendered as
+      <a href="/PathToCurrentPage/AWSBig.png">
+        <img src="/PathToCurrentPage/AWS.png" alt="Set" width="200" />
+      </a>
+
+    We are handling document attachments differently from images.  Images are stored 
+    in the new wiki, while documents are stored outside the wiki.
+    """
+    grammar = contiguous(
+        "[[attachment:",
+        attr("attachedItem", [InternalImagePath, InternalPagePath]),
+        optional("|", attr("linkDisplay", [InternalImage, TextToEndOfLinkClause]),
+                 optional("|", attr("extras", re.compile(r".*?(?=\]\])"))),
+        "]]"))
+
+    def compose(self, parser, attr_of):
+        """
+        Override compose method to generate Markdown.
+        """
+        # TODO: Nothing is done with the extras.  That's OK, we don't want the &do=get
+        # kinda miss the target though.
+
+        if hasattr(self, "linkDisplay") and hasattr(self.linkDisplay, "imagePath"):
+            # item shown for link is an image; must be rendered in html
+            out = self.composeHtml()
+        else:
+            # item shown for link is text; can be in markdown
+            if hasattr(self.attachedItem, "getPagePart"): # HACK
+                # thing we are linking to is a document
+                link = "PLACEHOLDER_ATTACHMENT_URL" + self.attachedItem.getWikiRootPath()
+            else:
+                # thing we are linking to is an image.
+                link = self.attachedItem.getWikiRootPath()
+
+            if hasattr(self, "linkDisplay"):
+                linkText = compose(self.linkDisplay)
+            else:
+                linkText = link
+            out = "[" + linkText + "](" + link + ")"
+
+        return(out)
+
+
+    def composeHtml(self):
+        if hasattr(self.attachedItem, "getPagePart"):
+            linkText =  self.attachedItem.getWikiRootPath()
+            link = "PLACEHOLDER_ATTACHMENT_URL" + linkText
+        else:
+            link = self.attachedItem.getWikiRootPath()
+            linkText = link
+        if hasattr(self, "linkDisplay"):
+            out = "<a href='" + link + "'>" + (self.linkDisplay.composeHtml()) + '</a>'
+        else:
+            out = "<a href='" + link + "'>" + linkText + '</a>'
+
+        return(out)
+
+        
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        InternalImagePath.test()
+        InternalPagePath.test()
+        InternalImage.test()
+        parse('[[attachment:galaxy_schema.png|{{attachment:galaxy_schema.png|Galaxy Data Model; click to enlarge|width="600"}}|&do=get,target="_blank"]]', cls)
+        parse('[[attachment:Documents/Presentations/2016_IIBMP.pdf|Slides]]', cls)
+        parse('[[attachment:AWSSetRegion.png|{{attachment:AWSSetRegion.png|Set region|width="200"}}]]', cls)
+        parse('[[attachment:AWSBig.png|{{attachment:AWS.png|Set|width="200"}}|&do=get,target="_blank"]]', cls)
+        parse('[[attachment:jetstream_GettingStarted.png|{{attachment:jetstream_GettingStarted.png||width="75%"}}|&do=get,target="_blank"]]', cls)
+        parse('[[attachment:toolbox_filter_ui.png|{{attachment:toolbox_filter_ui.png|User Interface}}]]', cls)
+
+
 
 class InternalLink(List):
     """
@@ -1712,11 +1838,7 @@ class InterWikiLink(List):
             self.createMailToMacro()
             out = self.m2m.compose(parser, attr_of)
         else:
-            if self.interWikiName.lower() == "attachment":
-                # TODO. Not an interwiki link at all!
-                url = "ATTACHMENT_URL"
-            else:
-                url = interWikiMap[self.interWikiName.lower()].url
+            url = interWikiMap[self.interWikiName.lower()].url
             if hasattr(self, 'wikiPage'):
                 url += self.wikiPage
             if hasattr(self, 'linkText'):
@@ -1734,11 +1856,7 @@ class InterWikiLink(List):
             self.createMailToMacro()
             out = self.m2m.composeHtml()
         else:
-            if self.interWikiName.lower() == "attachment":
-                # TODO. Not an interwiki link at all!
-                url = "PLACEHOLDER_ATTACHMENT_URL"
-            else:
-                url = interWikiMap[self.interWikiName.lower()].url
+            url = interWikiMap[self.interWikiName.lower()].url
             if hasattr(self, 'wikiPage'):
                 url += self.wikiPage
 
@@ -1850,7 +1968,10 @@ class Image(List):
         attr("image", [InternalImage, ExternalImage]))
 
     def compose(self, parser, attr_of):
-        out = compose(self.image)
+        if self.needsHtmlRendering():
+            out = self.composeHtml()
+        else:
+            out = compose(self.image)
         return(out)
 
         
@@ -1881,7 +2002,8 @@ class Image(List):
         parse('{{attachment:Images/Logos/w4m_logo_small.png|Traitement des données métabolomiques sous Galaxy|height="80"}}', cls)
         parse('{{attachment:Images/Logos/WACD.png|Western Association of Core Directors (WACD) Annual Meeting|height="70"}}', cls)
         parse('{{attachment:GenomeBiologyColver20108.gif|Genome Biology|height="125"}}', cls)
-
+        parse('{{attachment:Images/Logos/WACD.png|Western Association of Core Directors (WACD) Annual Meeting|height="70"}}', cls)
+        parse('{{attachment:data_managers_figure_S1_schematic_overview.png||width=600}}', cls)
         
 
 class ImageLink(List):
@@ -1906,6 +2028,9 @@ class ImageLink(List):
          attr("linkPath", InternalPagePath)],
         "|",
         attr("image", Image),
+        optional(
+            "|",
+            attr("theRest", TextToEndOfLinkClause)),
         "]]")
 
     def compose(self, parser, attr_of):
@@ -1949,30 +2074,8 @@ class ImageLink(List):
               cls)
         parse('[[http://workflow4metabolomics.org/training/W4Mcourse2015|{{attachment:Images/Logos/w4m_logo_small.png|Traitement des données métabolomiques sous Galaxy|height="80"}}]]', cls)
         parse('[[http://wacd.abrf.org/|{{attachment:Images/Logos/WACD.png|Western Association of Core Directors (WACD) Annual Meeting|height="70"}}]]', cls)
-
-
-class TextToEndOfLinkClause(List):
-    """
-    Used to match to the end of a clause in a link.  Clauses end with either | or ]].
-
-    This class only exists to address a bug (I think) in PyPeg, 
-    """
-    grammar = contiguous(
-        attr("textToEndOfLinkClause", re.compile(r".+?(?=(\||\]\]))")))
-
-    def compose(self, parser, attr_of):
-        return(self.textToEndOfLinkClause)
-
-
-    @classmethod
-    def test(cls):
-        """
-        Test different instances of what this should and should not recognize
-        """
-        return
-        parse("SW4) The Galaxy Platform for Multi-Omic Data Analysis and Informatics", cls)
-        parse("(SW4) The Galaxy Platform for Multi-Omic Data Analysis and Informatics", cls)
-
+        parse('[[attachment:data_managers_figure_S1_schematic_overview.png|{{attachment:data_managers_figure_S1_schematic_overview.png||width=600}}]] ', cls)
+        parse('[[DevNewsBriefs/2012_10_23#Visualization_framework|{{attachment:Images/NewsGraphics/2012_10_23_scatterplot-fullscreen.png|scatterplot visualization|width="180"}}|target="_blank"]]', cls)
 
 class ExternalLink(List):
     """
@@ -2047,7 +2150,7 @@ class Link(List):
     images, and some have extra params.
     """
     grammar = contiguous(
-        attr("link", [ImageLink, ExternalLink, InterWikiLink, InternalLink]))
+        attr("link", [AttachmentLink, ImageLink, ExternalLink, InterWikiLink, InternalLink]))
 
         
     def compose(self, parser, attr_of):
@@ -2073,6 +2176,7 @@ class Link(List):
         ExternalLink.test()
         InterWikiLink.test()
         InternalLink.test()
+        AttachmentLink.test()
         ImageLink.test()
         parse("[[https://developers.google.com/open-source/soc|Google Summer of Code 2015]]", cls)
         parse(" [[http://link.com|Link to here]]", cls)
@@ -3139,7 +3243,7 @@ class Argghhs(object):
             "--mdpage", required=False, default=None,
             help="Where to put the resulting markdown page.")
         argParser.add_argument(
-            "--wikiroot", required=False, default="",
+            "--wikiroot", required=False, default="/src",
             help="Root of all links used inside the wiki.")
         argParser.add_argument(
             "--pagedepth", required=False, default=0,
