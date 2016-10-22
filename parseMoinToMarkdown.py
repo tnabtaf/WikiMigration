@@ -821,10 +821,23 @@ class WikiWord(InternalPagePath):
       !CloudMan
 
     This recognizes WikiWords.
+
     TODO: Implement wiki word paths.
+    It should recognize these as paths:
+      WhatAbout/InPaths
+      /WhatAbout/InPaths
+    
+    But not these:
+      Whatabout/InPaths
+      WhatAbout/Inpaths
+      WhatAbout/InPaths/
+      /WhatAbout/InPaths/
+
+    Can't end in a /, but can start with and have embedded /'s, 
+    and all parts of path have to be WikiWords.
     """
     grammar = contiguous(
-        attr("pagePart", re.compile(r"[A-Z][a-z0-9]+([A-Z][a-z0-9]+)+")))
+        attr("pagePart", re.compile(r"(/?[A-Z][a-z0-9]+([A-Z][a-z0-9]+)+)+")))
 
     def compose(self, parser, attr_of):
         """
@@ -848,11 +861,19 @@ class WikiWord(InternalPagePath):
         parse("WordsOfWisdom", cls)
         parse("W1W2", cls)
         parse("Wiki7Wa", cls)
+        parse("WhatAbout/InPaths", cls)
+        parse("/WhatAbout/InPaths", cls)
+        parse("/WhatAbout/InPaths/DeepPath", cls)
 
         testFail("WWWordsOfWisdom", cls)
         testFail("W_Words", cls)
         testFail("WikiW", cls)
         testFail("Wik7W", cls)
+        testFail("Whatabout/InPaths", cls)
+        testFail("WhatAbout/Inpaths", cls)
+        testFail("WhatAbout/InPaths/", cls)
+        testFail("/WhatAbout/InPaths/", cls)
+
 
 class SuppressedWikiWord(List):
     """
@@ -1127,6 +1148,7 @@ class ExternalPagePath(str):
         parse("/Includes", cls)
         parse("developers.google.com/+/features/sign-in", cls)
         parse("gridscheduler.sourceforge.net/htmlman/htmlman5/sge_request.html", cls)
+        parse("dev.uabgrid.uab.edu/wiki/GalaxyTeleconference-2012-05", cls)
         testFail("gridscheduler.sourceforge.net/htmlman/htmlman5/sge_request.html|~/.sge_request", cls)
 
         
@@ -2324,6 +2346,7 @@ class DirectExternalLink(List):
         parse('http://genomebiology.com/2010/11/8/R86', cls)
         parse('http://i.imgur.com/OCA45pA.png', cls)
         parse('http://i.imgur.com/OCA45pA.png#Anchors_are_us', cls)
+        parse('https://dev.uabgrid.uab.edu/wiki/GalaxyTeleconference-2012-05', cls)
 
 
 class Link(List):
@@ -2384,7 +2407,8 @@ class Subelement(List):
     grammar = contiguous(
         [LeadingSpaces, Macro, Link, Image, SuppressedWikiWord, WikiWord,
          SuperScriptText, StrikeThroughText,
-         Underline, Bold, Italic, Monospace,
+         # Underline, 
+         Bold, Italic, Monospace,
          CodeBlockStart, CodeBlockEnd,
          FontSizeChangeStart, FontSizeChangeEnd,
          InlineComment, PlainText, Punctuation])
@@ -2436,8 +2460,10 @@ class Subelement(List):
 class SubelementSansMacro(Subelement):
 
     grammar = contiguous(
-        [LeadingSpaces, Link, Image, SuperScriptText, StrikeThroughText,
-         Underline, Bold, Italic, Monospace,
+        [LeadingSpaces, Link, Image, SuppressedWikiWord, WikiWord,
+         SuperScriptText, StrikeThroughText,
+         # Underline, 
+         Bold, Italic, Monospace,
          CodeBlockStart, CodeBlockEnd,
          FontSizeChangeStart, FontSizeChangeEnd,
          InlineComment, PlainText, Punctuation])
