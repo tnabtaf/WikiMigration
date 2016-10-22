@@ -214,7 +214,7 @@ class Comment(List):
         testFail("# Not a comment", cls)
         testFail("#format\n", cls)
 
-        
+
 
 # ============
 # plain text
@@ -383,6 +383,14 @@ class Underline(List):
         else:
             return("</u>")
 
+    @classmethod
+    def reset(cls):
+        if Underline.inUnderline:
+            print("Warning: Underline.inUnderline not restored to correct value, = " + 
+                  str(Underline.inUnderline))
+
+        Underline.inUnderline = False
+
         
     @classmethod
     def test(cls):
@@ -413,6 +421,14 @@ class Bold(List):
             return("<strong>")
         else:
             return("</strong>")
+
+    @classmethod
+    def reset(cls):
+        if Bold.inBold:
+            print("Warning: Bold.inBold not restored to correct value, = " + 
+                  str(Bold.inBold))
+
+        Bold.inBold = False
 
         
     @classmethod
@@ -447,6 +463,13 @@ class Italic(List):
         else:
             return("</em>")
 
+    @classmethod
+    def reset(cls):
+        if Italic.inItalic:
+            print("Warning: Italic.inItalic not restored to correct value, = " + 
+                  str(Italic.inItalic))
+
+        Italic.inItalic = False
 
                 
     @classmethod
@@ -576,6 +599,16 @@ class CodeBlockStart(List):
         # IGNORING FORMAT; nothing we can do.
         return(out)
         
+
+    @classmethod
+    def reset(cls):
+        if CodeBlockStart.inCodeBlock:
+            print("Warning: CodeBlockStart.inCodeBlock not restored to correct value, = " + 
+                  str(CodeBlockStart.inCodeBlock))
+
+        CodeBlockStart.inCodeBlock = False
+
+
     @classmethod
     def test(cls):
         """
@@ -668,7 +701,6 @@ class InternalPagePath(List):
         return(out)
 
 
-
     def isSubPageLink(self):
         """
         Return true if this path is to a subpage.  Subpage links start with / 
@@ -754,6 +786,115 @@ class InternalPagePath(List):
         parse("../Includes/Something", cls)
         parse("#Internal to this page", cls)
         parse("Teach/Trainers#LUMC, ErasmusMC, DTL Learning Programme", cls)
+
+
+# ============
+# Wiki Words
+# ============
+
+class WikiWord(InternalPagePath):
+    """
+    WikiWords are automatically turned into links by moin moin.  These are examples:
+      W1W2
+      Wiki7Wa
+      WordsOfWisdon
+
+    And these are not wiki words:
+      W_Words
+      Wiki_Words
+      WikiW
+      WWWordsOfWisdom
+      Wiki7W
+      Wiki7
+      W1W
+      Wiki-Words
+      Wiki-fishWords
+      /WikiWordNot
+
+    Sepcial case
+      Wiki-FishWords
+
+    Wiki is not a link, but FishWords is.
+
+    To suppress a WikiWord from becoming a link, put an ! in front of it:
+      Wiki-!FishWords
+      !CloudMan
+
+    This recognizes WikiWords.
+    TODO: Implement wiki word paths.
+    """
+    grammar = contiguous(
+        attr("pagePart", re.compile(r"[A-Z][a-z0-9]+([A-Z][a-z0-9]+)+")))
+
+    def compose(self, parser, attr_of):
+        """
+        WikiWords become links
+        """
+        if CodeBlockStart.inCodeBlock:
+            out = self.getPagePart() 
+        else:
+            out = "[" + self.getPagePart() + "](" + self.getWikiRootPath() + "/index.md)"
+        return(out)
+
+    def composeHtml(self):
+        return('<a href="' + self.getWikiRootPath() + '/index.md">' + self.getPagePart() + '</a>')
+
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        # What should work
+        parse("WordsOfWisdom", cls)
+        parse("W1W2", cls)
+        parse("Wiki7Wa", cls)
+
+        testFail("WWWordsOfWisdom", cls)
+        testFail("W_Words", cls)
+        testFail("WikiW", cls)
+        testFail("Wik7W", cls)
+
+class SuppressedWikiWord(List):
+    """
+    WikiWords are automatically turned into links by moin moin.  These are examples:
+      W1W2
+      Wiki7Wa
+      WordsOfWisdon
+    
+    To suppress a WikiWord from becoming a link, put a ! in front of it.
+      !W1W2
+      !Wiki7Wa
+      !WordsOfWisdon
+
+    """
+    grammar = contiguous(
+        "!",
+        attr("wikiWord", WikiWord))
+
+    def compose(self, parser, attr_of):
+        """
+        Suppressed WikiWords are just text
+        """
+        return(self.wikiWord.getPagePart())
+
+    def composeHtml(self):
+        return(self.wikiWord.getPagePart())
+
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        # What should work
+        parse("!WordsOfWisdom", cls)
+        parse("!W1W2", cls)
+        parse("!Wiki7Wa", cls)
+
+        testFail("!WWWordsOfWisdom", cls)
+        testFail("!W_Words", cls)
+        testFail("!WikiW", cls)
+        testFail("!Wik7W", cls)
+        
 
 
 class InternalImagePath(List):
@@ -2144,13 +2285,55 @@ class ExternalLink(List):
         #parse('[[http://gridscheduler.sourceforge.net/htmlman/htmlman5/sge_request.html|~/.sge_request]]', cls)
 
 
+class DirectExternalLink(List):
+    """
+    Raw links in text in the wiki.  That is
+
+      http://trac-hacks.org/wiki/TrueHttpLogoutPatch
+
+    without any moin [[ ]] around it.
+    Becomes a link
+    """
+    grammar = contiguous(
+        attr("protocol", LinkProtocol),
+        attr("path", ExternalPagePath))
+
+    def compose(self, parser, attr_of):
+        """
+        Override compose method to generate Markdown.
+        """
+        return(compose(self.protocol) + compose(self.path))
+
+
+    def composeHtml(self):
+        linkOut = compose(self.protocol) + compose(self.path)
+        out = "<a href='" + linkOut + "'>" + linkOut + "</a>"
+        return(out)
+        
+    @classmethod
+    def test(cls):
+        """
+        Test different instances of what this should and should not recognize
+        """
+        LinkProtocol.test()
+        ExternalPagePath.test()
+        parse("http://link.com", cls)
+        parse("ftp://this.here.com/path/file.txt", cls)
+        parse("https://link.com/", cls)
+        parse("https://planemo.readthedocs.org/en/latest/", cls)
+        parse('http://genomebiology.com/2010/11/8/R86', cls)
+        parse('http://i.imgur.com/OCA45pA.png', cls)
+        parse('http://i.imgur.com/OCA45pA.png#Anchors_are_us', cls)
+
+
 class Link(List):
     """
     Links in Moin are enclosed in [[ ]].  Some have text, some have embedded
     images, and some have extra params.
     """
     grammar = contiguous(
-        attr("link", [AttachmentLink, ImageLink, ExternalLink, InterWikiLink, InternalLink]))
+        attr("link", [AttachmentLink, ImageLink, ExternalLink, DirectExternalLink, 
+                      InterWikiLink, InternalLink]))
 
         
     def compose(self, parser, attr_of):
@@ -2177,6 +2360,7 @@ class Link(List):
         InterWikiLink.test()
         InternalLink.test()
         AttachmentLink.test()
+        DirectExternalLink.test()
         ImageLink.test()
         parse("[[https://developers.google.com/open-source/soc|Google Summer of Code 2015]]", cls)
         parse(" [[http://link.com|Link to here]]", cls)
@@ -2198,7 +2382,8 @@ class Subelement(List):
     Subelements can also be elements.
     """
     grammar = contiguous(
-        [LeadingSpaces, Macro, Link, Image, SuperScriptText, StrikeThroughText,
+        [LeadingSpaces, Macro, Link, Image, SuppressedWikiWord, WikiWord,
+         SuperScriptText, StrikeThroughText,
          Underline, Bold, Italic, Monospace,
          CodeBlockStart, CodeBlockEnd,
          FontSizeChangeStart, FontSizeChangeEnd,
@@ -2235,6 +2420,8 @@ class Subelement(List):
         Image.test()
         Macro.test()
         PlainText.test()
+        SuppressedWikiWord.test()
+        WikiWord.test()
         SuperScriptText.test()
         StrikeThroughText.test()
         Underline.test()
@@ -2356,7 +2543,16 @@ class MoinList(List):
         out += "\n"             # have to have a trailing blank line.
         return(out)
 
-        
+    @classmethod
+    def reset(cls):
+        # indentLevel can end up at 0 or 1, so don't report on it.
+        if MoinList.indentBase:
+            print("Warning: MoinList.indentBase not restored to correct value, = " + 
+                  str(MoinList.indentBase))
+
+        MoinList.indentLevel = 0
+        MoinList.indentBase = 0
+    
     @classmethod
     def test(cls):
         """
@@ -3261,6 +3457,18 @@ class Argghhs(object):
         return(None)
 
 
+def resetState():
+    """
+    There are some state variables used in this module that should be restored to initial values
+    as input text is parsed.  However, sometimes the input text doesn't close a tag as it should.
+    So, we need to reset state.
+    """
+    Underline.reset()
+    Bold.reset()
+    Italic.reset()
+    CodeBlockStart.reset()
+    MoinList.reset()
+
 def testFail(testText, cls):
     """
     Run a parse test that should fail.
@@ -3401,6 +3609,7 @@ def translate(srcFilePath, destFilePath, root, depth):
     """
     Translate a file from MoinMoin markup to GFM.
     """
+    resetState()                     # clear out any crap from previous run
     moinFile = open(srcFilePath, "r")
     moinText = moinFile.read()
     moinFile.close()
@@ -3471,10 +3680,6 @@ if __name__ == "__main__":
             print("====\n====\nEND DOCUMENT in PARSED FORM\n====\n====")
 
 
-class WikiWordLinks(List):
-    """
-    Need to handle Camel Case words that are links.
-    """
 class CategoryLinks(List):
     """
     What to do with Category links?
