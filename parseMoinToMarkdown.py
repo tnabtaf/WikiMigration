@@ -3466,7 +3466,7 @@ class Argghhs(object):
             help="Where to put the resulting markdown page.")
         argParser.add_argument(
             "--wikiroot", required=False, default="/src",
-            help="Root of all links used inside the wiki.")
+            help="Root of all links used inside the wiki. For example, /src.")
         argParser.add_argument(
             "--pagedepth", required=False, default=0,
             help="How deep in the directory structure is the page.  0 = top")

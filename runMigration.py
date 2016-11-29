@@ -28,7 +28,7 @@ class Argghhs(object):
             help="Path of directory to put translated pages into")
         argParser.add_argument(
             "--wikiroot", required=True,
-            help="Root of all links used inside the wiki.")
+            help="Root of all links used inside the wiki.  For example, /src.")
         argParser.add_argument(
             "--onlynew", required=False, action="store_true",
             help="Only translate pages you haven't already translated")
