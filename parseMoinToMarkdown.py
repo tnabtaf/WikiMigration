@@ -1414,11 +1414,11 @@ class MailToMacro(List):
         """
         Can be generated as a link in Markdown
         """
-        out = "[mailto:" + self.emailAddress + "]"
         if hasattr(self, "toText"):
-            out += "(" + self.toText + ")"
+            out = "(" + self.toText + ")"
         else:
-            out += "(" + self.emailAddress + ")"
+            out = "(" + self.emailAddress + ")"
+        out += "[mailto:" + self.emailAddress + "]"
         return(out)
 
     def composeHtml(self):
